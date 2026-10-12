@@ -1,0 +1,9 @@
+old/
+envars.txt
+kintone_records/
+__pycache__/
+*.xlsx
+*.pdf
+*.zip
+*.txt
+!requirements.txt
