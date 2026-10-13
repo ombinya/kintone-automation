@@ -101,12 +101,7 @@ class SpreadsheetService:
             raise SpreadsheetServiceError(
                 "The selected spreadsheet no longer exists."
             )
-        if not self.output_directory.is_dir():
-            raise SpreadsheetServiceError(
-                f"Output directory not found: {self.output_directory}"
-            )
-
-        output = self.output_directory / f"{source.stem}_updated.xlsx"
+        output = source
         temporary_output = output.with_name(
             f".{output.stem}.{uuid4().hex}.xlsx"
         )
@@ -160,17 +155,7 @@ class SpreadsheetService:
             raise SpreadsheetServiceError(
                 "The selected spreadsheet no longer exists."
             )
-        if not self.output_directory.is_dir():
-            raise SpreadsheetServiceError(
-                f"Output directory not found: {self.output_directory}"
-            )
-
-        if source.stem.endswith("_kintone_updated"):
-            output = source
-        else:
-            output = self.output_directory / (
-                f"{source.stem}_kintone_updated.xlsx"
-            )
+        output = source
         temporary_output = output.with_name(
             f".{output.stem}.{uuid4().hex}.xlsx"
         )

@@ -168,7 +168,7 @@ class ReconciliationController:
             "Reconciliation Complete",
             "The statement and spreadsheet have been checked using "
             "transaction code, date, amount, and transaction charge.\n\n"
-            f"Updated copy: {Path(updated_copy).name}\n\n"
+            f"Updated file: {Path(updated_copy).name}\n\n"
             f"Statement transactions: {len(statement_transactions)}\n"
             f"Spreadsheet records: {len(spreadsheet_records)}\n"
             "Matched statement transactions: "
