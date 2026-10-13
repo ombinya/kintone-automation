@@ -11,6 +11,7 @@ from pathlib import Path
 from PySide6.QtWidgets import QApplication
 
 from controllers.kintone_controller import KintoneController
+from controllers.cloudia_evidence_controller import CloudiaEvidenceController
 from controllers.reconciliation_controller import ReconciliationController
 from controllers.statement_controller import StatementController
 from controllers.spreadsheet_controller import SpreadsheetController
@@ -18,6 +19,7 @@ from services.kintone_reconciliation_service import (
     KintoneReconciliationService,
 )
 from services.kintone_service import KintoneService
+from services.cloudia_evidence_service import CloudiaEvidenceService
 from services.reconciliation_service import ReconciliationService
 from services.spreadsheet_service import SpreadsheetService
 from services.statement_service import StatementService
@@ -35,6 +37,10 @@ class Application:
         self.spreadsheet_service = SpreadsheetService(PROJECT_DIR)
         self.reconciliation_service = ReconciliationService()
         self.kintone_service = KintoneService()
+        self.cloudia_evidence_service = CloudiaEvidenceService(
+            PROJECT_DIR,
+            self.kintone_service,
+        )
         self.kintone_reconciliation_service = (
             KintoneReconciliationService()
         )
@@ -59,6 +65,11 @@ class Application:
             self.kintone_service,
             self.kintone_reconciliation_service,
             self.spreadsheet_service,
+            self.spreadsheet_controller,
+        )
+        self.cloudia_evidence_controller = CloudiaEvidenceController(
+            self.main_window,
+            self.cloudia_evidence_service,
             self.spreadsheet_controller,
         )
 

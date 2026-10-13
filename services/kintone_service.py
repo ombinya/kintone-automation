@@ -82,6 +82,63 @@ class KintoneService:
             order_direction="desc",
         )
 
+    def get_record_by_id(self, record_id) -> dict:
+        """Fetch one Kintone record by its record ID."""
+        base_url, app_id, api_token = self._configuration()
+        endpoint = f"{base_url}/record.json"
+        try:
+            response = requests.get(
+                endpoint,
+                headers={"X-Cybozu-API-Token": api_token},
+                params={"app": app_id, "id": str(record_id), "lang": "en"},
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except requests.RequestException as error:
+            raise KintoneServiceError(
+                f"Kintone record {record_id} could not be downloaded."
+            ) from error
+        except ValueError as error:
+            raise KintoneServiceError(
+                "Kintone returned an invalid record response."
+            ) from error
+        record = payload.get("record")
+        if not isinstance(record, dict):
+            raise KintoneServiceError(
+                f"Kintone record {record_id} was not returned."
+            )
+        return record
+
+    def download_file(self, file_key: str, destination: Path) -> Path:
+        """Download one Kintone attachment to an exact destination path."""
+        base_url, _app_id, api_token = self._configuration()
+        endpoint = f"{base_url}/file.json"
+        temporary = destination.with_name(f".{destination.name}.part")
+        try:
+            response = requests.get(
+                endpoint,
+                headers={"X-Cybozu-API-Token": api_token},
+                params={"fileKey": file_key},
+                stream=True,
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+            with temporary.open("wb") as output:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        output.write(chunk)
+            temporary.replace(destination)
+        except (requests.RequestException, OSError) as error:
+            raise KintoneServiceError(
+                f"A Kintone attachment could not be saved as "
+                f"{destination.name}."
+            ) from error
+        finally:
+            if temporary.exists():
+                temporary.unlink()
+        return destination
+
     def _get_records(
         self,
         query_filter: str,

@@ -27,6 +27,7 @@ class MainWindow(QMainWindow):
     reconcile_spreadsheet_kintone_clicked = Signal()
     spreadsheet_record_clicked = Signal(int)
     spreadsheet_records_activated = Signal(object)
+    generate_cloudia_evidence_clicked = Signal()
     period_changed = Signal()
 
     def __init__(self) -> None:
@@ -42,6 +43,7 @@ class MainWindow(QMainWindow):
         self._connect_statement_actions()
         self._connect_spreadsheet_actions()
         self._connect_kintone_actions()
+        self._connect_cloudia_evidence_actions()
         self.set_statement_unlocked(False)
         self.set_spreadsheet_valid(False)
         self.set_reconciliation_complete(False)
@@ -222,6 +224,11 @@ class MainWindow(QMainWindow):
             self._activate_selected_spreadsheet_records
         )
 
+    def _connect_cloudia_evidence_actions(self) -> None:
+        self.ui.generate_cloudia_evidences_button.clicked.connect(
+            self.generate_cloudia_evidence_clicked
+        )
+
     def _activate_selected_spreadsheet_records(self, index) -> None:
         selected_rows = {
             selected.row()
@@ -301,3 +308,10 @@ class MainWindow(QMainWindow):
 
     def set_kintone_candidate_lookup_busy(self, busy: bool) -> None:
         self.ui.spreadsheet_records_table.setEnabled(not busy)
+
+    def set_cloudia_evidence_busy(self, busy: bool) -> None:
+        generate_button = self.ui.generate_cloudia_evidences_button
+        generate_button.setEnabled(not busy)
+        generate_button.setText(
+            "Generating..." if busy else "Generate"
+        )

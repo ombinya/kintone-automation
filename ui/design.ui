@@ -48,7 +48,7 @@
     <item>
      <widget class="QStackedWidget" name="stackedWidget">
       <property name="currentIndex">
-       <number>2</number>
+       <number>3</number>
       </property>
       <widget class="QWidget" name="mpesa_statement_page">
        <layout class="QVBoxLayout" name="verticalLayout_2">
@@ -1893,7 +1893,7 @@
                      <number>0</number>
                     </property>
                     <item>
-                     <widget class="QPushButton" name="unlock_file_button_2">
+                     <widget class="QPushButton" name="generate_cloudia_evidences_button">
                       <property name="text">
                        <string>Generate</string>
                       </property>

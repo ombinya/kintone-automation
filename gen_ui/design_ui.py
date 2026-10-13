@@ -811,10 +811,10 @@ class Ui_MainWindow(object):
         self.horizontalLayout_16.setSpacing(8)
         self.horizontalLayout_16.setObjectName(u"horizontalLayout_16")
         self.horizontalLayout_16.setContentsMargins(0, 0, 0, 0)
-        self.unlock_file_button_2 = QPushButton(self.frame_34)
-        self.unlock_file_button_2.setObjectName(u"unlock_file_button_2")
+        self.generate_cloudia_evidences_button = QPushButton(self.frame_34)
+        self.generate_cloudia_evidences_button.setObjectName(u"generate_cloudia_evidences_button")
 
-        self.horizontalLayout_16.addWidget(self.unlock_file_button_2)
+        self.horizontalLayout_16.addWidget(self.generate_cloudia_evidences_button)
 
         self.horizontalSpacer_18 = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
@@ -878,7 +878,7 @@ class Ui_MainWindow(object):
 
         self.retranslateUi(MainWindow)
 
-        self.stackedWidget.setCurrentIndex(2)
+        self.stackedWidget.setCurrentIndex(3)
         self.month_input_combo.setCurrentIndex(9)
         self.year_input_combo.setCurrentIndex(6)
 
@@ -939,7 +939,7 @@ class Ui_MainWindow(object):
         self.app_title_5.setText(QCoreApplication.translate("MainWindow", u"ACCOUNTING MANAGEMENT", None))
         self.page_title_5.setText(QCoreApplication.translate("MainWindow", u"CLOUDIA EVIDENCE", None))
         self.label_11.setText(QCoreApplication.translate("MainWindow", u"Generate Cloudia evidence folder based on Kintone records", None))
-        self.unlock_file_button_2.setText(QCoreApplication.translate("MainWindow", u"Generate", None))
+        self.generate_cloudia_evidences_button.setText(QCoreApplication.translate("MainWindow", u"Generate", None))
         self.back_to_kintone_page.setText(QCoreApplication.translate("MainWindow", u"<<< Kintone Records", None))
     # retranslateUi
 
