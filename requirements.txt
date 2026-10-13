@@ -3,3 +3,5 @@ openpyxl
 pandas
 tabula-py
 requests
+PyMuPDF
+PyPDF2
