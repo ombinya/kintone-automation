@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import date, datetime
+from itertools import combinations
 import re
 
 from readers.mpesa_record_reader import MpesaRecordReader
@@ -12,8 +13,13 @@ AMOUNT_TOLERANCE = 0.01
 
 @dataclass(frozen=True)
 class ReconciledPair:
-    statement_transaction: dict
+    statement_transactions: tuple[dict, ...]
     spreadsheet_records: tuple[dict, ...]
+
+    @property
+    def statement_transaction(self) -> dict:
+        """Retain access to the first transaction for older callers."""
+        return self.statement_transactions[0]
 
 
 @dataclass(frozen=True)
@@ -28,10 +34,26 @@ class TransactionCodeAssignment:
     statement_transaction: dict
     spreadsheet_record: dict
     method: str = "unique"
+    additional_statement_transactions: tuple[dict, ...] = ()
+
+    @property
+    def statement_transactions(self) -> tuple[dict, ...]:
+        return (
+            self.statement_transaction,
+            *self.additional_statement_transactions,
+        )
+
+    @property
+    def transaction_code(self) -> str:
+        return " ".join(
+            str(transaction.get("Receipt No.") or "").strip()
+            for transaction in self.statement_transactions
+            if transaction.get("Receipt No.") not in (None, "")
+        )
 
 
 class ReconciliationService:
-    """Perform deterministic, one-to-one transaction matching."""
+    """Perform deterministic statement-to-spreadsheet matching."""
 
     def reconcile(
         self,
@@ -58,7 +80,7 @@ class ReconciliationService:
                 unmatched_spreadsheet.remove(direct_match)
                 matched_pairs.append(
                     ReconciledPair(
-                        statement_transaction,
+                        (statement_transaction,),
                         (direct_match,),
                     )
                 )
@@ -81,7 +103,24 @@ class ReconciliationService:
                 if id(record) not in matched_ids
             ]
             matched_pairs.append(
-                ReconciledPair(statement_transaction, matched_group)
+                ReconciledPair((statement_transaction,), matched_group)
+            )
+
+        combined_matches = self._matching_statement_groups(
+            unmatched_statement,
+            unmatched_spreadsheet,
+            require_matching_codes=True,
+        )
+        for statements, record in combined_matches:
+            statement_ids = {id(statement) for statement in statements}
+            unmatched_statement = [
+                statement
+                for statement in unmatched_statement
+                if id(statement) not in statement_ids
+            ]
+            unmatched_spreadsheet.remove(record)
+            matched_pairs.append(
+                ReconciledPair(statements, (record,))
             )
 
         return ReconciliationResult(
@@ -218,6 +257,32 @@ class ReconciliationService:
                 if id(record) not in assigned_record_ids
             ]
 
+        combined_matches = self._matching_statement_groups(
+            remaining_statements,
+            remaining_records,
+            require_matching_codes=False,
+        )
+        for statements, record in combined_matches:
+            assignments.append(
+                TransactionCodeAssignment(
+                    statements[0],
+                    record,
+                    method="combined",
+                    additional_statement_transactions=statements[1:],
+                )
+            )
+            statement_ids = {id(statement) for statement in statements}
+            remaining_statements = [
+                statement
+                for statement in remaining_statements
+                if id(statement) not in statement_ids
+            ]
+            remaining_records = [
+                candidate
+                for candidate in remaining_records
+                if candidate is not record
+            ]
+
         for statement in remaining_statements:
             candidates = self._ordered_fallback_candidates(
                 statement,
@@ -261,7 +326,168 @@ class ReconciliationService:
             )
             if not has_direct_candidate and not has_group_candidate:
                 missing.append(statement)
-        return tuple(missing)
+
+        combined_matches = self._matching_statement_groups(
+            missing,
+            spreadsheet_records,
+            require_matching_codes=False,
+        )
+        combined_statement_ids = {
+            id(statement)
+            for statements, _record in combined_matches
+            for statement in statements
+        }
+        return tuple(
+            statement
+            for statement in missing
+            if id(statement) not in combined_statement_ids
+        )
+
+    @classmethod
+    def _matching_statement_groups(
+        cls,
+        statement_transactions,
+        spreadsheet_records,
+        require_matching_codes: bool,
+    ) -> list[tuple[tuple[dict, ...], dict]]:
+        """Find unambiguous many-statement-to-one-spreadsheet matches."""
+        remaining_statements = list(statement_transactions)
+        remaining_records = list(spreadsheet_records)
+        accepted = []
+
+        while remaining_statements and remaining_records:
+            candidates_by_record = {
+                id(record): cls._statement_group_candidates_for_record(
+                    record,
+                    remaining_statements,
+                    require_matching_codes,
+                )
+                for record in remaining_records
+            }
+            statement_use_count = {}
+            for candidates in candidates_by_record.values():
+                for candidate in candidates:
+                    for statement in candidate:
+                        statement_use_count[id(statement)] = (
+                            statement_use_count.get(id(statement), 0) + 1
+                        )
+
+            round_matches = []
+            for record in remaining_records:
+                candidates = candidates_by_record[id(record)]
+                if len(candidates) != 1:
+                    continue
+                statements = candidates[0]
+                if all(
+                    statement_use_count[id(statement)] == 1
+                    for statement in statements
+                ):
+                    round_matches.append((statements, record))
+
+            if not round_matches:
+                break
+
+            accepted.extend(round_matches)
+            used_statement_ids = {
+                id(statement)
+                for statements, _record in round_matches
+                for statement in statements
+            }
+            used_record_ids = {
+                id(record) for _statements, record in round_matches
+            }
+            remaining_statements = [
+                statement
+                for statement in remaining_statements
+                if id(statement) not in used_statement_ids
+            ]
+            remaining_records = [
+                record
+                for record in remaining_records
+                if id(record) not in used_record_ids
+            ]
+
+        return accepted
+
+    @classmethod
+    def _statement_group_candidates_for_record(
+        cls,
+        spreadsheet_record: dict,
+        statement_transactions,
+        require_matching_codes: bool,
+    ) -> list[tuple[dict, ...]]:
+        record_date = cls._date(spreadsheet_record.get("Date"))
+        spreadsheet_payee = spreadsheet_record.get("Payee/Payer")
+        expected_codes = cls._code_tokens(
+            spreadsheet_record.get("Transaction Code")
+        )
+        if require_matching_codes and len(expected_codes) < 2:
+            return []
+
+        eligible = []
+        for statement in statement_transactions:
+            if cls._date(statement.get("Completion Time")) != record_date:
+                continue
+            if not cls._payees_match(
+                statement.get("Payee"),
+                spreadsheet_payee,
+            ):
+                continue
+            receipt = str(statement.get("Receipt No.") or "").strip()
+            if require_matching_codes and receipt.casefold() not in {
+                code.casefold() for code in expected_codes
+            }:
+                continue
+            eligible.append(statement)
+
+        matches = []
+        for size in range(2, len(eligible) + 1):
+            for candidate in combinations(eligible, size):
+                if require_matching_codes:
+                    candidate_codes = cls._code_tokens(
+                        " ".join(
+                            str(item.get("Receipt No.") or "")
+                            for item in candidate
+                        )
+                    )
+                    if {
+                        code.casefold() for code in candidate_codes
+                    } != {
+                        code.casefold() for code in expected_codes
+                    }:
+                        continue
+                if cls._statement_group_financials_match(
+                    candidate,
+                    spreadsheet_record,
+                ):
+                    matches.append(tuple(candidate))
+        return matches
+
+    @classmethod
+    def _statement_group_financials_match(
+        cls,
+        statement_transactions,
+        spreadsheet_record: dict,
+    ) -> bool:
+        try:
+            statement_amount = sum(
+                float(cls._statement_amount(transaction))
+                for transaction in statement_transactions
+            )
+            statement_charge = sum(
+                float(transaction.get("Transaction charge") or 0)
+                for transaction in statement_transactions
+            )
+            spreadsheet_amount = float(spreadsheet_record.get("Amount"))
+            spreadsheet_charge = float(
+                spreadsheet_record.get("Trans Chr.") or 0
+            )
+        except (TypeError, ValueError):
+            return False
+        return (
+            cls._values_match(statement_amount, -spreadsheet_amount)
+            and cls._values_match(statement_charge, -spreadsheet_charge)
+        )
 
     @classmethod
     def _ordered_fallback_candidates(
@@ -526,9 +752,17 @@ class ReconciliationService:
     def _codes_match(receipt_number, transaction_code) -> bool:
         if receipt_number in (None, "") or transaction_code in (None, ""):
             return False
-        return str(receipt_number).strip().casefold() == str(
-            transaction_code
-        ).strip().casefold()
+        receipt = str(receipt_number).strip().casefold()
+        return receipt in {
+            code.casefold()
+            for code in ReconciliationService._code_tokens(transaction_code)
+        }
+
+    @staticmethod
+    def _code_tokens(value) -> tuple[str, ...]:
+        if value in (None, ""):
+            return ()
+        return tuple(str(value).split())
 
     @staticmethod
     def _date(value) -> date | None:

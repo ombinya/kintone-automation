@@ -403,8 +403,16 @@ class CloudiaEvidenceService:
 
     @staticmethod
     def _file_transaction_codes(records) -> str:
-        codes = CloudiaEvidenceService._transaction_codes(records)
-        return f" {', '.join(codes)}" if len(codes) > 1 else ""
+        code_groups = CloudiaEvidenceService._transaction_codes(records)
+        individual_codes = {
+            code.casefold()
+            for group in code_groups
+            for code in group.split()
+            if code
+        }
+        if len(individual_codes) <= 1:
+            return ""
+        return f" {', '.join(code_groups)}"
 
     @staticmethod
     def _attachments(record):

@@ -9,6 +9,9 @@ from services.cloudia_evidence_service import CloudiaEvidenceServiceError
 from services.kintone_service import KintoneServiceError
 
 
+PROJECT_DIR = Path(__file__).resolve().parent.parent
+
+
 class _CloudiaEvidenceWorker(QThread):
     succeeded = Signal(object)
     failed = Signal(str)
@@ -54,9 +57,26 @@ class CloudiaEvidenceController:
         self.view = view
         self.service = service
         self.spreadsheet_controller = spreadsheet_controller
+        self.kintone_records_file_path: str | None = None
         self._worker: _CloudiaEvidenceWorker | None = None
 
+        self.view.browse_kintone_records_file_clicked.connect(
+            self.choose_kintone_records_file
+        )
         self.view.generate_cloudia_evidence_clicked.connect(self.generate)
+
+    def choose_kintone_records_file(self) -> None:
+        file_path, _ = QFileDialog.getOpenFileName(
+            self.view,
+            "Select Kintone records PDF",
+            str(PROJECT_DIR),
+            "PDF Files (*.pdf)",
+        )
+        if not file_path:
+            return
+
+        self.kintone_records_file_path = file_path
+        self.view.set_kintone_records_file_path(file_path)
 
     def generate(self) -> None:
         if self._worker is not None and self._worker.isRunning():
@@ -71,29 +91,23 @@ class CloudiaEvidenceController:
             )
             return
 
-        month, year = self.view.statement_period()
-        spreadsheet_path = self.spreadsheet_controller.spreadsheet_file_path
-        initial_directory = (
-            str(Path(spreadsheet_path).resolve().parent)
-            if spreadsheet_path
-            else str(Path.cwd())
-        )
-        request_pdf, _ = QFileDialog.getOpenFileName(
-            self.view,
-            "Select Kintone request PDF",
-            initial_directory,
-            "PDF Files (*.pdf)",
-        )
-        if not request_pdf:
+        if not self.kintone_records_file_path:
+            QMessageBox.warning(
+                self.view,
+                "Kintone Records Required",
+                "Select the Kintone records PDF before generating Cloudia "
+                "evidence.",
+            )
             return
 
+        month, year = self.view.statement_period()
         self.view.set_cloudia_evidence_busy(True)
         self._worker = _CloudiaEvidenceWorker(
             self.service,
             records,
             month,
             year,
-            request_pdf,
+            self.kintone_records_file_path,
         )
         self._worker.succeeded.connect(self._generation_succeeded)
         self._worker.failed.connect(self._generation_failed)

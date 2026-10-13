@@ -36,7 +36,7 @@ class Ui_MainWindow(object):
 "	border: 1px solid rgba(0,0,0,.2);\n"
 "}\n"
 "\n"
-"#statement_file_name, #spreadsheet_file_name {\n"
+"#statement_file_name, #spreadsheet_file_name, #kintone_records_file_name {\n"
 "	border: 2px dashed grey;\n"
 "}")
         self.centralwidget = QWidget(MainWindow)
@@ -801,6 +801,43 @@ class Ui_MainWindow(object):
 
         self.verticalLayout_30.addWidget(self.frame_31)
 
+        self.frame = QFrame(self.grey_border_frame)
+        self.frame.setObjectName(u"frame")
+        sizePolicy2.setHeightForWidth(self.frame.sizePolicy().hasHeightForWidth())
+        self.frame.setSizePolicy(sizePolicy2)
+        self.frame.setFrameShape(QFrame.Shape.StyledPanel)
+        self.frame.setFrameShadow(QFrame.Shadow.Raised)
+        self.horizontalLayout_9 = QHBoxLayout(self.frame)
+        self.horizontalLayout_9.setSpacing(8)
+        self.horizontalLayout_9.setObjectName(u"horizontalLayout_9")
+        self.horizontalLayout_9.setContentsMargins(0, 0, 0, 0)
+        self.browser_kintone_records_button = QPushButton(self.frame)
+        self.browser_kintone_records_button.setObjectName(u"browser_kintone_records_button")
+        sizePolicy3 = QSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+        sizePolicy3.setHorizontalStretch(0)
+        sizePolicy3.setVerticalStretch(0)
+        sizePolicy3.setHeightForWidth(self.browser_kintone_records_button.sizePolicy().hasHeightForWidth())
+        self.browser_kintone_records_button.setSizePolicy(sizePolicy3)
+
+        self.horizontalLayout_9.addWidget(self.browser_kintone_records_button)
+
+        self.kintone_records_file_name = QFrame(self.frame)
+        self.kintone_records_file_name.setObjectName(u"kintone_records_file_name")
+        self.kintone_records_file_name.setFrameShape(QFrame.Shape.StyledPanel)
+        self.kintone_records_file_name.setFrameShadow(QFrame.Shadow.Raised)
+
+        self.horizontalLayout_9.addWidget(self.kintone_records_file_name)
+
+        self.horizontalSpacer_11 = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.horizontalLayout_9.addItem(self.horizontalSpacer_11)
+
+        self.horizontalLayout_9.setStretch(0, 1)
+        self.horizontalLayout_9.setStretch(1, 5)
+        self.horizontalLayout_9.setStretch(2, 4)
+
+        self.verticalLayout_30.addWidget(self.frame)
+
         self.frame_34 = QFrame(self.grey_border_frame)
         self.frame_34.setObjectName(u"frame_34")
         sizePolicy2.setHeightForWidth(self.frame_34.sizePolicy().hasHeightForWidth())
@@ -939,6 +976,7 @@ class Ui_MainWindow(object):
         self.app_title_5.setText(QCoreApplication.translate("MainWindow", u"ACCOUNTING MANAGEMENT", None))
         self.page_title_5.setText(QCoreApplication.translate("MainWindow", u"CLOUDIA EVIDENCE", None))
         self.label_11.setText(QCoreApplication.translate("MainWindow", u"Generate Cloudia evidence folder based on Kintone records", None))
+        self.browser_kintone_records_button.setText(QCoreApplication.translate("MainWindow", u"Browse", None))
         self.generate_cloudia_evidences_button.setText(QCoreApplication.translate("MainWindow", u"Generate", None))
         self.back_to_kintone_page.setText(QCoreApplication.translate("MainWindow", u"<<< Kintone Records", None))
     # retranslateUi

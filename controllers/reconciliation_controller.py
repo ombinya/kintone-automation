@@ -65,7 +65,7 @@ class ReconciliationController:
         ]
         for assignment in assignments:
             assignment.spreadsheet_record["Transaction Code"] = (
-                assignment.statement_transaction["Receipt No."]
+                assignment.transaction_code
             )
 
         preliminary_result = self.reconciliation_service.reconcile(
@@ -149,6 +149,15 @@ class ReconciliationController:
             len(pair.spreadsheet_records)
             for pair in self.result.matched_pairs
         )
+        matched_statement_transactions = sum(
+            len(pair.statement_transactions)
+            for pair in self.result.matched_pairs
+        )
+        combined_match_count = sum(
+            len(pair.statement_transactions) > 1
+            and len(pair.spreadsheet_records) == 1
+            for pair in self.result.matched_pairs
+        )
         if missing_statement_transactions:
             self._notify_added_records(
                 missing_statement_transactions,
@@ -163,8 +172,10 @@ class ReconciliationController:
             f"Statement transactions: {len(statement_transactions)}\n"
             f"Spreadsheet records: {len(spreadsheet_records)}\n"
             "Matched statement transactions: "
-            f"{len(self.result.matched_pairs)}\n"
+            f"{matched_statement_transactions}\n"
             f"Matched spreadsheet records: {matched_spreadsheet_rows}\n"
+            "Consolidated spreadsheet records detected: "
+            f"{combined_match_count}\n"
             "Unmatched statement transactions: "
             f"{len(self.result.unmatched_statement_transactions)}\n"
             "Unmatched spreadsheet records: "

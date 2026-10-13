@@ -269,9 +269,7 @@ class SpreadsheetService:
                     "again and retry."
                 )
 
-            receipt_number = assignment.statement_transaction.get(
-                "Receipt No."
-            )
+            receipt_number = assignment.transaction_code
             existing_code = record.get("Transaction Code")
             if existing_code not in (None, "") and not cls._same_code(
                 existing_code,
@@ -524,7 +522,13 @@ class SpreadsheetService:
     def _same_code(left, right) -> bool:
         if left in (None, "") or right in (None, ""):
             return left in (None, "") and right in (None, "")
-        return str(left).strip().casefold() == str(right).strip().casefold()
+        left_codes = {
+            code.casefold() for code in str(left).split() if code
+        }
+        right_codes = {
+            code.casefold() for code in str(right).split() if code
+        }
+        return left_codes == right_codes
 
     @staticmethod
     def _same_cell_value(left, right) -> bool:

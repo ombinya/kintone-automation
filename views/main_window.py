@@ -27,6 +27,7 @@ class MainWindow(QMainWindow):
     reconcile_spreadsheet_kintone_clicked = Signal()
     spreadsheet_record_clicked = Signal(int)
     spreadsheet_records_activated = Signal(object)
+    browse_kintone_records_file_clicked = Signal()
     generate_cloudia_evidence_clicked = Signal()
     period_changed = Signal()
 
@@ -37,6 +38,7 @@ class MainWindow(QMainWindow):
 
         self._configure_statement_inputs()
         self._configure_spreadsheet_inputs()
+        self._configure_cloudia_evidence_inputs()
         self._configure_spreadsheet_records_table()
         self._select_current_period()
         self._connect_navigation()
@@ -83,6 +85,20 @@ class MainWindow(QMainWindow):
             self._spreadsheet_file_label = QLabel(file_display)
             self._spreadsheet_file_label.setWordWrap(True)
             layout.addWidget(self._spreadsheet_file_label)
+
+    def _configure_cloudia_evidence_inputs(self) -> None:
+        file_display = self.ui.kintone_records_file_name
+        if isinstance(file_display, QLabel):
+            self._kintone_records_file_label = file_display
+        else:
+            layout = file_display.layout()
+            if layout is None:
+                layout = QHBoxLayout(file_display)
+                layout.setContentsMargins(6, 0, 6, 0)
+
+            self._kintone_records_file_label = QLabel(file_display)
+            self._kintone_records_file_label.setWordWrap(True)
+            layout.addWidget(self._kintone_records_file_label)
 
     def _configure_spreadsheet_records_table(self) -> None:
         self._spreadsheet_records_model = QStandardItemModel(0, 5, self)
@@ -225,6 +241,9 @@ class MainWindow(QMainWindow):
         )
 
     def _connect_cloudia_evidence_actions(self) -> None:
+        self.ui.browser_kintone_records_button.clicked.connect(
+            self.browse_kintone_records_file_clicked
+        )
         self.ui.generate_cloudia_evidences_button.clicked.connect(
             self.generate_cloudia_evidence_clicked
         )
@@ -276,6 +295,11 @@ class MainWindow(QMainWindow):
         self._spreadsheet_file_label.setToolTip(file_path)
         self.ui.spreadsheet_file_name.setToolTip(file_path)
 
+    def set_kintone_records_file_path(self, file_path: str) -> None:
+        self._kintone_records_file_label.setText(Path(file_path).name)
+        self._kintone_records_file_label.setToolTip(file_path)
+        self.ui.kintone_records_file_name.setToolTip(file_path)
+
     def set_spreadsheet_valid(self, valid: bool) -> None:
         self.ui.reconcile_statement_spreadsheet_button.setEnabled(valid)
         self.set_reconciliation_complete(False)
@@ -310,6 +334,7 @@ class MainWindow(QMainWindow):
         self.ui.spreadsheet_records_table.setEnabled(not busy)
 
     def set_cloudia_evidence_busy(self, busy: bool) -> None:
+        self.ui.browser_kintone_records_button.setEnabled(not busy)
         generate_button = self.ui.generate_cloudia_evidences_button
         generate_button.setEnabled(not busy)
         generate_button.setText(
