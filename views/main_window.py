@@ -2,8 +2,16 @@
 
 from pathlib import Path
 
-from PySide6.QtCore import QDate, Signal
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QMainWindow
+from PySide6.QtCore import QDate, Qt, Signal
+from PySide6.QtGui import QStandardItem, QStandardItemModel
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QHeaderView,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+)
 
 from gen_ui.design_ui import Ui_MainWindow
 
@@ -17,6 +25,8 @@ class MainWindow(QMainWindow):
     validate_spreadsheet_file_clicked = Signal()
     reconcile_statement_spreadsheet_clicked = Signal()
     reconcile_spreadsheet_kintone_clicked = Signal()
+    spreadsheet_record_clicked = Signal(int)
+    spreadsheet_records_activated = Signal(object)
     period_changed = Signal()
 
     def __init__(self) -> None:
@@ -26,6 +36,7 @@ class MainWindow(QMainWindow):
 
         self._configure_statement_inputs()
         self._configure_spreadsheet_inputs()
+        self._configure_spreadsheet_records_table()
         self._select_current_period()
         self._connect_navigation()
         self._connect_statement_actions()
@@ -70,6 +81,67 @@ class MainWindow(QMainWindow):
             self._spreadsheet_file_label = QLabel(file_display)
             self._spreadsheet_file_label.setWordWrap(True)
             layout.addWidget(self._spreadsheet_file_label)
+
+    def _configure_spreadsheet_records_table(self) -> None:
+        self._spreadsheet_records_model = QStandardItemModel(0, 5, self)
+        self._spreadsheet_records_model.setHorizontalHeaderLabels(
+            ("Date Paid", "Payee", "Amount", "Description", "Matched")
+        )
+
+        table = self.ui.spreadsheet_records_table
+        table.setModel(self._spreadsheet_records_model)
+        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        table.setSelectionBehavior(
+            QAbstractItemView.SelectionBehavior.SelectRows
+        )
+        table.setSelectionMode(
+            QAbstractItemView.SelectionMode.ExtendedSelection
+        )
+        table.setAlternatingRowColors(True)
+        table.verticalHeader().setVisible(False)
+        header = table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+
+    def set_spreadsheet_records(self, records) -> None:
+        """Display validated spreadsheet records on the Kintone page."""
+        self._spreadsheet_records_model.setRowCount(0)
+        for record in records or ():
+            record_date = record.get("Date")
+            if hasattr(record_date, "date"):
+                record_date = record_date.date()
+            if hasattr(record_date, "isoformat"):
+                date_text = record_date.isoformat()
+            elif record_date in (None, ""):
+                date_text = ""
+            else:
+                date_text = str(record_date)[:10]
+
+            amount = record.get("Amount")
+            amount_text = "" if amount in (None, "") else str(amount)
+            matched_text = (
+                "Yes"
+                if record.get("Kintone Record ID") not in (None, "")
+                else ""
+            )
+            items = [
+                QStandardItem(date_text),
+                QStandardItem(str(record.get("Payee/Payer") or "")),
+                QStandardItem(amount_text),
+                QStandardItem(str(record.get("Description") or "")),
+                QStandardItem(matched_text),
+            ]
+            items[0].setTextAlignment(
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+            )
+            items[2].setTextAlignment(
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+            )
+            items[4].setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self._spreadsheet_records_model.appendRow(items)
 
     def _select_current_period(self) -> None:
         today = QDate.currentDate()
@@ -136,9 +208,29 @@ class MainWindow(QMainWindow):
         )
 
     def _connect_kintone_actions(self) -> None:
-        self.ui.reconcile_spreadsheet_kintone_button.clicked.connect(
-            self.reconcile_spreadsheet_kintone_clicked
+        reconcile_button = getattr(
+            self.ui,
+            "reconcile_spreadsheet_kintone_button",
+            None,
         )
+        if reconcile_button is not None:
+            reconcile_button.setVisible(False)
+            reconcile_button.clicked.connect(
+                self.reconcile_spreadsheet_kintone_clicked
+            )
+        self.ui.spreadsheet_records_table.doubleClicked.connect(
+            self._activate_selected_spreadsheet_records
+        )
+
+    def _activate_selected_spreadsheet_records(self, index) -> None:
+        selected_rows = {
+            selected.row()
+            for selected in self.ui.spreadsheet_records_table.selectionModel(
+            ).selectedRows()
+        }
+        if not selected_rows:
+            selected_rows.add(index.row())
+        self.spreadsheet_records_activated.emit(tuple(sorted(selected_rows)))
 
     def set_statement_file_path(self, file_path: str) -> None:
         self._statement_file_label.setText(Path(file_path).name)
@@ -184,12 +276,28 @@ class MainWindow(QMainWindow):
     def set_reconciliation_complete(self, complete: bool) -> None:
         self._reconciliation_complete = complete
         self.ui.to_kintone_page.setEnabled(complete)
-        self.ui.reconcile_spreadsheet_kintone_button.setEnabled(complete)
+        reconcile_button = getattr(
+            self.ui,
+            "reconcile_spreadsheet_kintone_button",
+            None,
+        )
+        if reconcile_button is not None:
+            reconcile_button.setEnabled(complete)
 
     def set_kintone_busy(self, busy: bool) -> None:
-        self.ui.reconcile_spreadsheet_kintone_button.setEnabled(
-            not busy and getattr(self, "_reconciliation_complete", False)
+        reconcile_button = getattr(
+            self.ui,
+            "reconcile_spreadsheet_kintone_button",
+            None,
         )
-        self.ui.reconcile_spreadsheet_kintone_button.setText(
-            "Reconciling..." if busy else "Reconcile"
-        )
+        if reconcile_button is not None:
+            reconcile_button.setEnabled(
+                not busy
+                and getattr(self, "_reconciliation_complete", False)
+            )
+            reconcile_button.setText(
+                "Reconciling..." if busy else "Reconcile"
+            )
+
+    def set_kintone_candidate_lookup_busy(self, busy: bool) -> None:
+        self.ui.spreadsheet_records_table.setEnabled(not busy)

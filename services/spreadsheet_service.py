@@ -127,6 +127,8 @@ class SpreadsheetService:
                 calculation.forceFullCalc = True
 
             workbook.save(temporary_output)
+            workbook.close()
+            workbook = None
             temporary_output.replace(output)
             return output
         except SpreadsheetServiceError:
@@ -151,6 +153,7 @@ class SpreadsheetService:
         source_file: str,
         records,
         kintone_id_assignments,
+        allow_replacement: bool = False,
     ) -> Path:
         source = Path(source_file)
         if not source.is_file():
@@ -162,9 +165,12 @@ class SpreadsheetService:
                 f"Output directory not found: {self.output_directory}"
             )
 
-        output = self.output_directory / (
-            f"{source.stem}_kintone_updated.xlsx"
-        )
+        if source.stem.endswith("_kintone_updated"):
+            output = source
+        else:
+            output = self.output_directory / (
+                f"{source.stem}_kintone_updated.xlsx"
+            )
         temporary_output = output.with_name(
             f".{output.stem}.{uuid4().hex}.xlsx"
         )
@@ -176,6 +182,7 @@ class SpreadsheetService:
                 records,
                 assignments=(),
                 kintone_id_assignments=kintone_id_assignments,
+                allow_kintone_id_replacement=allow_replacement,
             )
 
             calculation = getattr(workbook, "calculation", None)
@@ -185,6 +192,8 @@ class SpreadsheetService:
                 calculation.forceFullCalc = True
 
             workbook.save(temporary_output)
+            workbook.close()
+            workbook = None
             temporary_output.replace(output)
             return output
         except SpreadsheetServiceError:
@@ -212,6 +221,7 @@ class SpreadsheetService:
         assignments,
         missing_statement_transactions=(),
         kintone_id_assignments=(),
+        allow_kintone_id_replacement: bool = False,
     ) -> None:
         worksheet, header_row = cls._record_worksheet(workbook)
         first_data_row = header_row + 1
@@ -288,8 +298,11 @@ class SpreadsheetService:
                 )
 
             existing_id = record.get("Kintone Record ID")
-            if existing_id not in (None, "") and str(existing_id).strip() != (
-                str(kintone_record_id).strip()
+            if (
+                not allow_kintone_id_replacement
+                and existing_id not in (None, "")
+                and str(existing_id).strip()
+                != str(kintone_record_id).strip()
             ):
                 raise SpreadsheetServiceError(
                     "A spreadsheet row already contains a different Kintone "

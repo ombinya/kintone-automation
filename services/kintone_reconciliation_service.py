@@ -9,7 +9,7 @@ import re
 from readers.mpesa_record_reader import MpesaRecordReader
 
 
-AMOUNT_TOLERANCE = Decimal("1.00")
+AMOUNT_TOLERANCE = Decimal("5.00")
 PAYEE_SIMILARITY_MINIMUM = 0.80
 
 
@@ -34,6 +34,8 @@ class SpreadsheetKintoneResult:
     excluded_late_kintone_records: tuple[dict, ...]
     excluded_payment_method_records: tuple[dict, ...]
     excluded_incomplete_kintone_records: tuple[dict, ...]
+    noncompleted_fallback_matches: tuple[SpreadsheetKintoneMatch, ...]
+    amount_only_fallback_matches: tuple[SpreadsheetKintoneMatch, ...]
 
 
 class KintoneReconciliationService:
@@ -46,6 +48,8 @@ class KintoneReconciliationService:
         month: int,
         year: int,
         payment_method: str,
+        outside_kintone_records=(),
+        allow_incomplete_fallback: bool = False,
     ) -> SpreadsheetKintoneResult:
         threshold = datetime(year, month, 1, tzinfo=timezone.utc)
         if month == 12:
@@ -163,6 +167,39 @@ class KintoneReconciliationService:
             if id(record) not in matched_kintone_ids
         ]
 
+        fallback_matches = []
+        amount_only_matches = []
+        if allow_incomplete_fallback and unmatched_spreadsheet:
+            (
+                fallback_matches,
+                unmatched_spreadsheet,
+                excluded_incomplete,
+            ) = self._match_incomplete_fallback(
+                unmatched_spreadsheet,
+                excluded_incomplete,
+                outside_kintone_records,
+                spreadsheet_records,
+                threshold,
+                period_end,
+                payment_method,
+            )
+            matches.extend(fallback_matches)
+
+        if allow_incomplete_fallback and unmatched_spreadsheet:
+            (
+                amount_only_matches,
+                unmatched_spreadsheet,
+                unmatched_kintone,
+                excluded_incomplete,
+            ) = self._match_unique_amount_fallback(
+                unmatched_spreadsheet,
+                unmatched_kintone,
+                excluded_incomplete,
+                tuple(kintone_records) + tuple(outside_kintone_records),
+                payment_method,
+            )
+            matches.extend(amount_only_matches)
+
         return SpreadsheetKintoneResult(
             matched_pairs=tuple(matches),
             unmatched_spreadsheet_records=tuple(unmatched_spreadsheet),
@@ -178,6 +215,8 @@ class KintoneReconciliationService:
             excluded_incomplete_kintone_records=tuple(
                 excluded_incomplete
             ),
+            noncompleted_fallback_matches=tuple(fallback_matches),
+            amount_only_fallback_matches=tuple(amount_only_matches),
         )
 
     @classmethod
@@ -188,6 +227,7 @@ class KintoneReconciliationService:
         threshold,
         period_end,
         payment_method: str,
+        require_completed: bool = True,
     ) -> bool:
         updated_at = cls.updated_at(kintone_record)
         if (
@@ -198,7 +238,7 @@ class KintoneReconciliationService:
             return False
         if cls.payment_method(kintone_record) != payment_method:
             return False
-        if cls.status(kintone_record) != "Completed":
+        if require_completed and cls.status(kintone_record) != "Completed":
             return False
 
         spreadsheet_amount = cls._money(
@@ -223,10 +263,207 @@ class KintoneReconciliationService:
         return abs(spreadsheet_amount - kintone_total) <= AMOUNT_TOLERANCE
 
     @classmethod
+    def _match_incomplete_fallback(
+        cls,
+        spreadsheet_records,
+        incomplete_kintone_records,
+        outside_kintone_records,
+        all_spreadsheet_records,
+        threshold,
+        period_end,
+        payment_method,
+    ):
+        """Match non-Completed records only if no outside-period twin exists."""
+        remaining_spreadsheet = list(spreadsheet_records)
+        remaining_kintone = list(incomplete_kintone_records)
+        outside_records = list(outside_kintone_records)
+        matches = []
+
+        for spreadsheet_record in list(remaining_spreadsheet):
+            candidate_indexes = [
+                index
+                for index, kintone_record in enumerate(remaining_kintone)
+                if cls.records_match(
+                    spreadsheet_record,
+                    kintone_record,
+                    threshold,
+                    period_end,
+                    payment_method,
+                    require_completed=False,
+                )
+                and not cls._has_outside_individual_candidate(
+                    spreadsheet_record,
+                    outside_records,
+                    payment_method,
+                )
+            ]
+            similar_spreadsheet_count = sum(
+                cls._spreadsheet_records_similar(
+                    spreadsheet_record,
+                    candidate,
+                )
+                for candidate in all_spreadsheet_records
+            )
+            if similar_spreadsheet_count > 1 or len(candidate_indexes) > 1:
+                candidate_indexes = [
+                    index
+                    for index in candidate_indexes
+                    if cls._dates_match(
+                        spreadsheet_record,
+                        remaining_kintone[index],
+                    )
+                ]
+            match_index = cls._select_candidate_index(
+                spreadsheet_record,
+                remaining_kintone,
+                candidate_indexes,
+            )
+            if match_index is None:
+                continue
+
+            kintone_record = remaining_kintone.pop(match_index)
+            remaining_spreadsheet = [
+                record
+                for record in remaining_spreadsheet
+                if record is not spreadsheet_record
+            ]
+            matches.append(
+                SpreadsheetKintoneMatch((spreadsheet_record,), kintone_record)
+            )
+
+        group_matches = cls._match_consecutive_groups(
+            remaining_spreadsheet,
+            remaining_kintone,
+            outside_records=outside_records,
+            payment_method=payment_method,
+        )
+        matches.extend(group_matches)
+        matched_spreadsheet_ids = {
+            id(record)
+            for match in group_matches
+            for record in match.spreadsheet_records
+        }
+        matched_kintone_ids = {
+            id(match.kintone_record) for match in group_matches
+        }
+        remaining_spreadsheet = [
+            record
+            for record in remaining_spreadsheet
+            if id(record) not in matched_spreadsheet_ids
+        ]
+        remaining_kintone = [
+            record
+            for record in remaining_kintone
+            if id(record) not in matched_kintone_ids
+        ]
+        return matches, remaining_spreadsheet, remaining_kintone
+
+    @classmethod
+    def _has_outside_individual_candidate(
+        cls,
+        spreadsheet_record,
+        outside_records,
+        payment_method,
+    ) -> bool:
+        return any(
+            cls.payment_method(record) == payment_method
+            and cls._amount_and_payee_match(spreadsheet_record, record)
+            for record in outside_records
+        )
+
+    @classmethod
+    def _amount_and_payee_match(cls, spreadsheet_record, kintone_record):
+        spreadsheet_amount = cls._money(spreadsheet_record.get("Amount"))
+        kintone_total = cls._money(
+            cls._field_value(kintone_record, "Total_Amount", "CALC")
+        )
+        if (
+            spreadsheet_amount is None
+            or spreadsheet_amount < 0
+            or kintone_total is None
+            or abs(spreadsheet_amount - kintone_total) > AMOUNT_TOLERANCE
+        ):
+            return False
+        spreadsheet_payee = cls._payee(
+            spreadsheet_record.get("Payee/Payer")
+        )
+        kintone_payee = cls._payee(
+            cls._field_value(kintone_record, "Payee", "SINGLE_LINE_TEXT")
+        )
+        return cls._payees_match(spreadsheet_payee, kintone_payee)
+
+    @classmethod
+    def _match_unique_amount_fallback(
+        cls,
+        spreadsheet_records,
+        completed_kintone_records,
+        incomplete_kintone_records,
+        all_kintone_records,
+        payment_method,
+    ):
+        """Match an exact amount only when it is globally unique for MPESA."""
+        remaining_spreadsheet = list(spreadsheet_records)
+        remaining_completed = list(completed_kintone_records)
+        remaining_incomplete = list(incomplete_kintone_records)
+        matches = []
+
+        for spreadsheet_record in list(remaining_spreadsheet):
+            amount = cls._money(spreadsheet_record.get("Amount"))
+            if amount is None or amount < 0:
+                continue
+
+            global_candidates = [
+                record
+                for record in all_kintone_records
+                if cls.payment_method(record) == payment_method
+                and cls._money(
+                    cls._field_value(record, "Total_Amount", "CALC")
+                )
+                == amount
+            ]
+            if len(global_candidates) != 1:
+                continue
+
+            selected = global_candidates[0]
+            if not any(
+                record is selected
+                for record in remaining_completed + remaining_incomplete
+            ):
+                continue
+
+            matches.append(
+                SpreadsheetKintoneMatch((spreadsheet_record,), selected)
+            )
+            remaining_spreadsheet = [
+                record
+                for record in remaining_spreadsheet
+                if record is not spreadsheet_record
+            ]
+            remaining_completed = [
+                record
+                for record in remaining_completed
+                if record is not selected
+            ]
+            remaining_incomplete = [
+                record
+                for record in remaining_incomplete
+                if record is not selected
+            ]
+
+        return (
+            matches,
+            remaining_spreadsheet,
+            remaining_completed,
+            remaining_incomplete,
+        )
+
+    @classmethod
     def _match_consecutive_groups(
         cls,
         spreadsheet_records,
         kintone_records,
+        outside_records=(),
+        payment_method: str | None = None,
     ) -> list[SpreadsheetKintoneMatch]:
         remaining_spreadsheet = list(spreadsheet_records)
         remaining_kintone = list(kintone_records)
@@ -240,6 +477,11 @@ class KintoneReconciliationService:
                     record
                     for record in remaining_kintone
                     if cls._group_matches_kintone(group, record)
+                    and not cls._has_outside_group_candidate(
+                        group,
+                        outside_records,
+                        payment_method,
+                    )
                 ]
                 selected_kintone = cls._select_kintone_by_payee(
                     group[0].get("Payee/Payer"),
@@ -271,6 +513,22 @@ class KintoneReconciliationService:
             ]
 
         return matches
+
+    @classmethod
+    def _has_outside_group_candidate(
+        cls,
+        group,
+        outside_records,
+        payment_method,
+    ) -> bool:
+        return any(
+            (
+                payment_method is None
+                or cls.payment_method(record) == payment_method
+            )
+            and cls._group_matches_kintone(group, record)
+            for record in outside_records
+        )
 
     @classmethod
     def _candidate_groups(cls, records):

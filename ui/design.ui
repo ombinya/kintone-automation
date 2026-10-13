@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>799</width>
+    <width>800</width>
     <height>600</height>
    </rect>
   </property>
@@ -1494,7 +1494,7 @@
               <item>
                <widget class="QFrame" name="spreadsheet_kintone_reconciliation_frame">
                 <property name="sizePolicy">
-                 <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+                 <sizepolicy hsizetype="Preferred" vsizetype="Expanding">
                   <horstretch>0</horstretch>
                   <verstretch>0</verstretch>
                  </sizepolicy>
@@ -1529,57 +1529,19 @@
                   </widget>
                  </item>
                  <item>
-                  <widget class="QFrame" name="frame_24">
-                   <property name="frameShape">
-                    <enum>QFrame::Shape::StyledPanel</enum>
-                   </property>
-                   <property name="frameShadow">
-                    <enum>QFrame::Shadow::Raised</enum>
-                   </property>
-                   <layout class="QHBoxLayout" name="horizontalLayout_13" stretch="1,9">
-                    <property name="spacing">
-                     <number>8</number>
-                    </property>
-                    <property name="leftMargin">
-                     <number>0</number>
-                    </property>
-                    <property name="topMargin">
-                     <number>0</number>
-                    </property>
-                    <property name="rightMargin">
-                     <number>0</number>
-                    </property>
-                    <property name="bottomMargin">
-                     <number>0</number>
-                    </property>
-                    <item>
-                     <widget class="QPushButton" name="reconcile_spreadsheet_kintone_button">
-                      <property name="text">
-                       <string>Reconcile</string>
-                      </property>
-                     </widget>
-                    </item>
-                    <item>
-                     <spacer name="horizontalSpacer_12">
-                      <property name="orientation">
-                       <enum>Qt::Orientation::Horizontal</enum>
-                      </property>
-                      <property name="sizeHint" stdset="0">
-                       <size>
-                        <width>40</width>
-                        <height>20</height>
-                       </size>
-                      </property>
-                     </spacer>
-                    </item>
-                   </layout>
-                  </widget>
+                  <widget class="QTableView" name="spreadsheet_records_table"/>
                  </item>
                 </layout>
                </widget>
               </item>
               <item>
                <widget class="QFrame" name="frame_25">
+                <property name="sizePolicy">
+                 <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+                  <horstretch>0</horstretch>
+                  <verstretch>0</verstretch>
+                 </sizepolicy>
+                </property>
                 <property name="frameShape">
                  <enum>QFrame::Shape::StyledPanel</enum>
                 </property>
@@ -1602,31 +1564,18 @@
                  <property name="spacing">
                   <number>0</number>
                  </property>
-                 <item row="1" column="1">
-                  <spacer name="verticalSpacer_5">
-                   <property name="orientation">
-                    <enum>Qt::Orientation::Vertical</enum>
-                   </property>
-                   <property name="sizeHint" stdset="0">
+                 <item row="0" column="0">
+                  <widget class="QPushButton" name="back_to_spreadsheet_page">
+                   <property name="minimumSize">
                     <size>
-                     <width>20</width>
-                     <height>176</height>
+                     <width>160</width>
+                     <height>0</height>
                     </size>
                    </property>
-                  </spacer>
-                 </item>
-                 <item row="1" column="2">
-                  <spacer name="verticalSpacer_6">
-                   <property name="orientation">
-                    <enum>Qt::Orientation::Vertical</enum>
+                   <property name="text">
+                    <string>&lt;&lt;&lt; Spreadsheet Records</string>
                    </property>
-                   <property name="sizeHint" stdset="0">
-                    <size>
-                     <width>20</width>
-                     <height>176</height>
-                    </size>
-                   </property>
-                  </spacer>
+                  </widget>
                  </item>
                  <item row="0" column="2">
                   <widget class="QPushButton" name="to_cloudia_evidence_page">
@@ -1653,19 +1602,6 @@
                     </size>
                    </property>
                   </spacer>
-                 </item>
-                 <item row="0" column="0">
-                  <widget class="QPushButton" name="back_to_spreadsheet_page">
-                   <property name="minimumSize">
-                    <size>
-                     <width>160</width>
-                     <height>0</height>
-                    </size>
-                   </property>
-                   <property name="text">
-                    <string>&lt;&lt;&lt; Spreadsheet Records</string>
-                   </property>
-                  </widget>
                  </item>
                 </layout>
                </widget>

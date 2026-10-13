@@ -1,12 +1,48 @@
 """Controller for spreadsheet-to-Kintone reconciliation."""
 
 from pathlib import Path
+from decimal import Decimal, InvalidOperation
 
 from PySide6.QtCore import QThread, Signal
-from PySide6.QtWidgets import QMessageBox
+from PySide6.QtWidgets import QDialog, QGridLayout, QMessageBox
 
 from services.kintone_service import KintoneServiceError
 from services.spreadsheet_service import SpreadsheetServiceError
+from readers.mpesa_record_reader import MpesaRecordReader
+from views.kintone_candidate_dialog import KintoneCandidateDialog
+
+
+class _KintoneCandidatesWorker(QThread):
+    succeeded = Signal(object, object)
+    failed = Signal(str)
+
+    def __init__(
+        self,
+        kintone_service,
+        spreadsheet_rows,
+        amount,
+        payment_method: str,
+    ) -> None:
+        super().__init__()
+        self._kintone_service = kintone_service
+        self._spreadsheet_rows = tuple(spreadsheet_rows)
+        self._amount = amount
+        self._payment_method = payment_method
+
+    def run(self) -> None:
+        try:
+            records = self._kintone_service.get_records_matching_amount(
+                self._amount,
+                self._payment_method,
+            )
+        except KintoneServiceError as error:
+            self.failed.emit(str(error))
+        except Exception:
+            self.failed.emit(
+                "An unexpected error occurred while finding Kintone records."
+            )
+        else:
+            self.succeeded.emit(self._spreadsheet_rows, records)
 
 
 class _KintoneReconciliationWorker(QThread):
@@ -44,6 +80,23 @@ class _KintoneReconciliationWorker(QThread):
                 self._year,
                 self._payment_method,
             )
+            if result.unmatched_spreadsheet_records:
+                outside_records = (
+                    self._kintone_service.get_records_outside_period(
+                        self._month,
+                        self._year,
+                        self._payment_method,
+                    )
+                )
+                result = self._reconciliation_service.reconcile(
+                    self._spreadsheet_records,
+                    kintone_records,
+                    self._month,
+                    self._year,
+                    self._payment_method,
+                    outside_kintone_records=outside_records,
+                    allow_incomplete_fallback=True,
+                )
         except KintoneServiceError as error:
             self.failed.emit(str(error))
         except Exception:
@@ -79,11 +132,236 @@ class KintoneController:
         self.kintone_records: list[dict] | None = None
         self.result = None
         self._worker: _KintoneReconciliationWorker | None = None
+        self._candidate_worker: _KintoneCandidatesWorker | None = None
 
+        self.view.spreadsheet_records_activated.connect(
+            self.show_candidates_for_rows
+        )
         self.view.reconcile_spreadsheet_kintone_clicked.connect(
             self.reconcile
         )
         self.view.period_changed.connect(self.invalidate_result)
+
+    def show_candidates_for_rows(self, rows) -> None:
+        if (
+            self._candidate_worker is not None
+            and self._candidate_worker.isRunning()
+        ):
+            return
+
+        records = self.spreadsheet_controller.spreadsheet_records
+        selected_rows = tuple(sorted(set(rows)))
+        if (
+            records is None
+            or not selected_rows
+            or any(row < 0 or row >= len(records) for row in selected_rows)
+        ):
+            return
+        spreadsheet_records = tuple(records[row] for row in selected_rows)
+        validation_error = self._selected_group_error(spreadsheet_records)
+        if validation_error:
+            QMessageBox.warning(
+                self.view,
+                "Invalid Spreadsheet Selection",
+                validation_error,
+            )
+            return
+
+        try:
+            combined_amount = sum(
+                (
+                    Decimal(str(record.get("Amount")).replace(",", ""))
+                    for record in spreadsheet_records
+                ),
+                Decimal("0"),
+            )
+        except (InvalidOperation, ValueError):
+            QMessageBox.warning(
+                self.view,
+                "Invalid Spreadsheet Amount",
+                "Every selected spreadsheet record must have a valid amount.",
+            )
+            return
+
+        payment_method = self.PAYMENT_METHODS.get(
+            self.spreadsheet_controller.spreadsheet_worksheet_name
+        )
+        if payment_method is None:
+            QMessageBox.warning(
+                self.view,
+                "Unsupported Spreadsheet",
+                "The validated spreadsheet must use the M-PESA1 or M-PESA2 "
+                "worksheet before selecting a Kintone record.",
+            )
+            return
+
+        self.view.set_kintone_candidate_lookup_busy(True)
+        self._candidate_worker = _KintoneCandidatesWorker(
+            self.kintone_service,
+            selected_rows,
+            combined_amount,
+            payment_method,
+        )
+        self._candidate_worker.succeeded.connect(
+            self._candidate_lookup_succeeded
+        )
+        self._candidate_worker.failed.connect(self._candidate_lookup_failed)
+        self._candidate_worker.finished.connect(
+            self._candidate_worker_finished
+        )
+        self._candidate_worker.start()
+
+    def _candidate_lookup_succeeded(self, rows, candidates) -> None:
+        spreadsheet_records = (
+            self.spreadsheet_controller.spreadsheet_records or []
+        )
+        selected_rows = tuple(rows)
+        if any(
+            row < 0 or row >= len(spreadsheet_records)
+            for row in selected_rows
+        ):
+            return
+
+        used_ids = {
+            str(record_id).strip()
+            for index, record in enumerate(spreadsheet_records)
+            if index not in selected_rows
+            for record_id in (record.get("Kintone Record ID"),)
+            if record_id not in (None, "")
+        }
+        available_candidates = [
+            record
+            for record in candidates
+            if self.reconciliation_service.record_id(record) not in used_ids
+        ]
+        if not available_candidates:
+            QMessageBox.information(
+                self.view,
+                "No Kintone Candidates",
+                "No unused Kintone records with the same amount and payment "
+                "method were found.",
+            )
+            return
+
+        selected_records = tuple(
+            spreadsheet_records[row] for row in selected_rows
+        )
+        dialog = KintoneCandidateDialog(
+            selected_records,
+            available_candidates,
+            self.view,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        if dialog.selected_record is not None:
+            self._save_manual_selection(
+                selected_records,
+                dialog.selected_record,
+            )
+
+    def _save_manual_selection(
+        self,
+        spreadsheet_records,
+        kintone_record,
+    ) -> None:
+        record_id = self.reconciliation_service.record_id(kintone_record)
+        try:
+            updated_copy = self.spreadsheet_service.save_kintone_ids_copy(
+                self.spreadsheet_controller.spreadsheet_file_path,
+                self.spreadsheet_controller.spreadsheet_records or [],
+                tuple(
+                    (spreadsheet_record, record_id)
+                    for spreadsheet_record in spreadsheet_records
+                ),
+                allow_replacement=True,
+            )
+            month, year = self.view.statement_period()
+            updated_result = self.spreadsheet_service.validate_file(
+                str(updated_copy),
+                month,
+                year,
+            )
+        except SpreadsheetServiceError as error:
+            QMessageBox.warning(
+                self.view,
+                "Unable to Save Kintone Record ID",
+                str(error),
+            )
+            return
+
+        updated_path = str(updated_copy)
+        self.spreadsheet_controller.spreadsheet_file_path = updated_path
+        self.spreadsheet_controller.validated_spreadsheet_path = updated_path
+        self.spreadsheet_controller.spreadsheet_records = list(
+            updated_result.records
+        )
+        self.spreadsheet_controller.spreadsheet_worksheet_name = (
+            updated_result.worksheet_name
+        )
+        self.view.set_spreadsheet_file_path(updated_path)
+        self.view.set_spreadsheet_records(
+            self.spreadsheet_controller.spreadsheet_records
+        )
+        QMessageBox.information(
+            self.view,
+            "Kintone Record Selected",
+            f"Kintone record {record_id} has been linked to "
+            f"{len(spreadsheet_records)} spreadsheet record(s).",
+        )
+
+    @staticmethod
+    def _selected_group_error(records) -> str | None:
+        if len(records) == 1:
+            return None
+
+        row_numbers = []
+        for record in records:
+            try:
+                row_numbers.append(
+                    int(record.get(MpesaRecordReader.ROW_NUMBER_KEY))
+                )
+            except (TypeError, ValueError):
+                return "The selected rows could not be mapped to the workbook."
+        if row_numbers != list(
+            range(row_numbers[0], row_numbers[0] + len(row_numbers))
+        ):
+            return "Select only consecutive spreadsheet rows."
+
+        worksheet_names = {
+            record.get(MpesaRecordReader.WORKSHEET_KEY) for record in records
+        }
+        if len(worksheet_names) != 1:
+            return "All selected records must belong to the same worksheet."
+
+        dates = {
+            str(record.get("Date"))[:10]
+            for record in records
+        }
+        if len(dates) != 1:
+            return "Combined spreadsheet records must have the same date."
+
+        payees = {
+            " ".join(
+                str(record.get("Payee/Payer") or "").casefold().split()
+            )
+            for record in records
+        }
+        if len(payees) != 1 or not next(iter(payees)):
+            return "Combined spreadsheet records must have the same payee."
+        return None
+
+    def _candidate_lookup_failed(self, message: str) -> None:
+        QMessageBox.warning(
+            self.view,
+            "Unable to Find Kintone Records",
+            message,
+        )
+
+    def _candidate_worker_finished(self) -> None:
+        self.view.set_kintone_candidate_lookup_busy(False)
+        if self._candidate_worker is not None:
+            self._candidate_worker.deleteLater()
+            self._candidate_worker = None
 
     def reconcile(self) -> None:
         if self._worker is not None and self._worker.isRunning():
@@ -177,6 +455,9 @@ class KintoneController:
                 updated_result.worksheet_name
             )
             self.view.set_spreadsheet_file_path(updated_path)
+            self.view.set_spreadsheet_records(
+                self.spreadsheet_controller.spreadsheet_records
+            )
 
         eligible_count = (
             len(kintone_records)
@@ -212,6 +493,10 @@ class KintoneController:
             f"Matched Kintone records: {len(result.matched_pairs)}\n"
             f"Matched spreadsheet rows: {matched_spreadsheet_rows}\n"
             f"Combined spreadsheet groups: {combined_groups}\n"
+            "Non-Completed fallback matches: "
+            f"{len(result.noncompleted_fallback_matches)}\n"
+            "Unique amount-only matches: "
+            f"{len(result.amount_only_fallback_matches)}\n"
             "Ignored negative spreadsheet records: "
             f"{len(result.ignored_negative_spreadsheet_records)}\n"
             "Unmatched spreadsheet records: "
@@ -227,6 +512,10 @@ class KintoneController:
         details = self._format_result_details(result)
         if details:
             message_box.setDetailedText(details)
+        message_box.setMinimumWidth(800)
+        layout = message_box.layout()
+        if isinstance(layout, QGridLayout):
+            layout.setColumnMinimumWidth(1, 650)
         message_box.exec()
 
     def _reconciliation_failed(self, message: str) -> None:
@@ -277,6 +566,39 @@ class KintoneController:
                 start=1,
             ):
                 lines.append(f"{index}. {cls._spreadsheet_summary(record)}")
+            sections.append("\n".join(lines))
+
+        if result.noncompleted_fallback_matches:
+            lines = ["NON-COMPLETED FALLBACK MATCHES"]
+            for index, pair in enumerate(
+                result.noncompleted_fallback_matches,
+                start=1,
+            ):
+                if len(pair.spreadsheet_records) == 1:
+                    spreadsheet_summary = cls._spreadsheet_summary(
+                        pair.spreadsheet_record
+                    )
+                else:
+                    spreadsheet_summary = cls._spreadsheet_group_summary(
+                        pair.spreadsheet_records
+                    )
+                lines.append(
+                    f"{index}. Spreadsheet: {spreadsheet_summary} | "
+                    f"Kintone ID: {cls._kintone_id(pair.kintone_record)}"
+                )
+            sections.append("\n".join(lines))
+
+        if result.amount_only_fallback_matches:
+            lines = ["UNIQUE AMOUNT-ONLY FALLBACK MATCHES"]
+            for index, pair in enumerate(
+                result.amount_only_fallback_matches,
+                start=1,
+            ):
+                lines.append(
+                    f"{index}. Spreadsheet: "
+                    f"{cls._spreadsheet_summary(pair.spreadsheet_record)} | "
+                    f"Kintone ID: {cls._kintone_id(pair.kintone_record)}"
+                )
             sections.append("\n".join(lines))
 
         if result.unmatched_kintone_records:

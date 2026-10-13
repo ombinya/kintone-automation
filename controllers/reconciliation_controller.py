@@ -134,6 +134,7 @@ class ReconciliationController:
         )
         spreadsheet_records = self.spreadsheet_controller.spreadsheet_records
         self.view.set_spreadsheet_file_path(updated_path)
+        self.view.set_spreadsheet_records(spreadsheet_records)
 
         self.result = self.reconciliation_service.reconcile(
             statement_transactions,

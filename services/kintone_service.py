@@ -1,6 +1,7 @@
 """Read accounting records from Kintone."""
 
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 import os
 from pathlib import Path
 from urllib.parse import urlparse
@@ -13,9 +14,10 @@ class KintoneServiceError(RuntimeError):
 
 
 class KintoneService:
-    """Fetch Kintone records updated within the selected calendar month."""
+    """Fetch Kintone records used by spreadsheet reconciliation."""
 
     PAGE_SIZE = 500
+    CANDIDATE_AMOUNT_TOLERANCE = Decimal("5")
 
     def __init__(self, timeout: int = 30) -> None:
         self.timeout = timeout
@@ -26,54 +28,87 @@ class KintoneService:
         year: int,
         payment_method: str,
     ) -> list[dict]:
+        """Fetch all statuses updated within the selected calendar month."""
+        updated_since, updated_before = self._period_boundaries(month, year)
+        query_filter = (
+            f'更新日時 >= "{updated_since}" '
+            f'and 更新日時 < "{updated_before}" '
+            f'and ラジオボタン in ("{payment_method}")'
+        )
+        return self._get_records(query_filter, payment_method)
+
+    def get_records_outside_period(
+        self,
+        month: int,
+        year: int,
+        payment_method: str,
+    ) -> list[dict]:
+        """Fetch possible matches updated before or after the selected month."""
+        updated_since, updated_before = self._period_boundaries(month, year)
+        query_filter = (
+            f'(更新日時 < "{updated_since}" '
+            f'or 更新日時 >= "{updated_before}") '
+            f'and ラジオボタン in ("{payment_method}")'
+        )
+        return self._get_records(query_filter, payment_method)
+
+    def get_records_matching_amount(
+        self,
+        amount,
+        payment_method: str,
+    ) -> list[dict]:
+        """Fetch same-payment-method records with an exact amount match."""
+        try:
+            numeric_amount = Decimal(str(amount).replace(",", ""))
+        except (InvalidOperation, ValueError) as error:
+            raise KintoneServiceError(
+                "The selected spreadsheet record has an invalid amount."
+            ) from error
+        if not numeric_amount.is_finite():
+            raise KintoneServiceError(
+                "The selected spreadsheet record has an invalid amount."
+            )
+
+        minimum_amount = numeric_amount - self.CANDIDATE_AMOUNT_TOLERANCE
+        maximum_amount = numeric_amount + self.CANDIDATE_AMOUNT_TOLERANCE
+        query_filter = (
+            f'Total_Amount >= {format(minimum_amount, "f")} '
+            f'and Total_Amount <= {format(maximum_amount, "f")} '
+            f'and ラジオボタン in ("{payment_method}")'
+        )
+        return self._get_records(
+            query_filter,
+            payment_method,
+            order_direction="desc",
+        )
+
+    def _get_records(
+        self,
+        query_filter: str,
+        payment_method: str,
+        order_direction: str = "asc",
+    ) -> list[dict]:
         base_url, app_id, api_token = self._configuration()
         if payment_method not in ("MPESA 1", "MPESA 2"):
             raise KintoneServiceError(
                 f"Unsupported Kintone payment method: {payment_method!r}."
             )
         endpoint = f"{base_url}/records.json"
-        updated_since = datetime(
-            year,
-            month,
-            1,
-            tzinfo=timezone.utc,
-        ).strftime("%Y-%m-%dT%H:%M:%SZ")
-        if month == 12:
-            period_end = datetime(
-                year + 1,
-                1,
-                1,
-                tzinfo=timezone.utc,
-            )
-        else:
-            period_end = datetime(
-                year,
-                month + 1,
-                1,
-                tzinfo=timezone.utc,
-            )
-        updated_before = period_end.strftime("%Y-%m-%dT%H:%M:%SZ")
-
+        if order_direction not in ("asc", "desc"):
+            raise ValueError("Unsupported Kintone sort direction.")
         records = []
         offset = 0
         while True:
             query = (
-                'ステータス in ("Completed") '
-                f'and 更新日時 >= "{updated_since}" '
-                f'and 更新日時 < "{updated_before}" '
-                f'and ラジオボタン in ("{payment_method}") '
-                f"order by 更新日時 asc limit {self.PAGE_SIZE} "
+                f"{query_filter} "
+                f"order by 更新日時 {order_direction} limit {self.PAGE_SIZE} "
                 f"offset {offset}"
             )
             try:
                 response = requests.get(
                     endpoint,
                     headers={"X-Cybozu-API-Token": api_token},
-                    params={
-                        "app": app_id,
-                        "lang": "en",
-                        "query": query,
-                    },
+                    params={"app": app_id, "lang": "en", "query": query},
                     timeout=self.timeout,
                 )
                 response.raise_for_status()
@@ -99,6 +134,18 @@ class KintoneService:
             offset += self.PAGE_SIZE
 
         return records
+
+    @staticmethod
+    def _period_boundaries(month: int, year: int) -> tuple[str, str]:
+        period_start = datetime(year, month, 1, tzinfo=timezone.utc)
+        if month == 12:
+            period_end = datetime(year + 1, 1, 1, tzinfo=timezone.utc)
+        else:
+            period_end = datetime(year, month + 1, 1, tzinfo=timezone.utc)
+        return (
+            period_start.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            period_end.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        )
 
     @staticmethod
     def _configuration() -> tuple[str, str, str]:

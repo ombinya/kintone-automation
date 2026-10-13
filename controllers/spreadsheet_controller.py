@@ -64,6 +64,7 @@ class SpreadsheetController:
         self.validated_spreadsheet_path = str(result.file_path)
         self.spreadsheet_records = list(result.records)
         self.spreadsheet_worksheet_name = result.worksheet_name
+        self.view.set_spreadsheet_records(self.spreadsheet_records)
         self.view.set_spreadsheet_valid(True)
         message = (
             f"The spreadsheet is valid for {month_name[month]} {year}.\n\n"
@@ -105,4 +106,5 @@ class SpreadsheetController:
         self.validated_spreadsheet_path = None
         self.spreadsheet_records = None
         self.spreadsheet_worksheet_name = None
+        self.view.set_spreadsheet_records(())
         self.view.set_spreadsheet_valid(False)

@@ -16,15 +16,16 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
 from PySide6.QtWidgets import (QApplication, QComboBox, QFrame, QGridLayout,
-    QHBoxLayout, QLabel, QLineEdit, QMainWindow,
-    QPushButton, QSizePolicy, QSpacerItem, QStackedWidget,
-    QStatusBar, QVBoxLayout, QWidget)
+    QHBoxLayout, QHeaderView, QLabel, QLineEdit,
+    QMainWindow, QPushButton, QSizePolicy, QSpacerItem,
+    QStackedWidget, QStatusBar, QTableView, QVBoxLayout,
+    QWidget)
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
         if not MainWindow.objectName():
             MainWindow.setObjectName(u"MainWindow")
-        MainWindow.resize(799, 600)
+        MainWindow.resize(800, 600)
         MainWindow.setStyleSheet(u"* {\n"
 "	font-family: \"Garamond\";\n"
 "	font-size: 12;\n"
@@ -650,8 +651,8 @@ class Ui_MainWindow(object):
 
         self.spreadsheet_kintone_reconciliation_frame = QFrame(self.frame_19)
         self.spreadsheet_kintone_reconciliation_frame.setObjectName(u"spreadsheet_kintone_reconciliation_frame")
-        sizePolicy2.setHeightForWidth(self.spreadsheet_kintone_reconciliation_frame.sizePolicy().hasHeightForWidth())
-        self.spreadsheet_kintone_reconciliation_frame.setSizePolicy(sizePolicy2)
+        sizePolicy1.setHeightForWidth(self.spreadsheet_kintone_reconciliation_frame.sizePolicy().hasHeightForWidth())
+        self.spreadsheet_kintone_reconciliation_frame.setSizePolicy(sizePolicy1)
         self.spreadsheet_kintone_reconciliation_frame.setFrameShape(QFrame.Shape.StyledPanel)
         self.spreadsheet_kintone_reconciliation_frame.setFrameShadow(QFrame.Shadow.Raised)
         self.verticalLayout_20 = QVBoxLayout(self.spreadsheet_kintone_reconciliation_frame)
@@ -663,46 +664,29 @@ class Ui_MainWindow(object):
 
         self.verticalLayout_20.addWidget(self.label_2)
 
-        self.frame_24 = QFrame(self.spreadsheet_kintone_reconciliation_frame)
-        self.frame_24.setObjectName(u"frame_24")
-        self.frame_24.setFrameShape(QFrame.Shape.StyledPanel)
-        self.frame_24.setFrameShadow(QFrame.Shadow.Raised)
-        self.horizontalLayout_13 = QHBoxLayout(self.frame_24)
-        self.horizontalLayout_13.setSpacing(8)
-        self.horizontalLayout_13.setObjectName(u"horizontalLayout_13")
-        self.horizontalLayout_13.setContentsMargins(0, 0, 0, 0)
-        self.reconcile_spreadsheet_kintone_button = QPushButton(self.frame_24)
-        self.reconcile_spreadsheet_kintone_button.setObjectName(u"reconcile_spreadsheet_kintone_button")
+        self.spreadsheet_records_table = QTableView(self.spreadsheet_kintone_reconciliation_frame)
+        self.spreadsheet_records_table.setObjectName(u"spreadsheet_records_table")
 
-        self.horizontalLayout_13.addWidget(self.reconcile_spreadsheet_kintone_button)
-
-        self.horizontalSpacer_12 = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
-
-        self.horizontalLayout_13.addItem(self.horizontalSpacer_12)
-
-        self.horizontalLayout_13.setStretch(0, 1)
-        self.horizontalLayout_13.setStretch(1, 9)
-
-        self.verticalLayout_20.addWidget(self.frame_24)
+        self.verticalLayout_20.addWidget(self.spreadsheet_records_table)
 
 
         self.verticalLayout_17.addWidget(self.spreadsheet_kintone_reconciliation_frame)
 
         self.frame_25 = QFrame(self.frame_19)
         self.frame_25.setObjectName(u"frame_25")
+        sizePolicy2.setHeightForWidth(self.frame_25.sizePolicy().hasHeightForWidth())
+        self.frame_25.setSizePolicy(sizePolicy2)
         self.frame_25.setFrameShape(QFrame.Shape.StyledPanel)
         self.frame_25.setFrameShadow(QFrame.Shadow.Raised)
         self.gridLayout_3 = QGridLayout(self.frame_25)
         self.gridLayout_3.setSpacing(0)
         self.gridLayout_3.setObjectName(u"gridLayout_3")
         self.gridLayout_3.setContentsMargins(0, 0, 0, 0)
-        self.verticalSpacer_5 = QSpacerItem(20, 176, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+        self.back_to_spreadsheet_page = QPushButton(self.frame_25)
+        self.back_to_spreadsheet_page.setObjectName(u"back_to_spreadsheet_page")
+        self.back_to_spreadsheet_page.setMinimumSize(QSize(160, 0))
 
-        self.gridLayout_3.addItem(self.verticalSpacer_5, 1, 1, 1, 1)
-
-        self.verticalSpacer_6 = QSpacerItem(20, 176, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
-
-        self.gridLayout_3.addItem(self.verticalSpacer_6, 1, 2, 1, 1)
+        self.gridLayout_3.addWidget(self.back_to_spreadsheet_page, 0, 0, 1, 1)
 
         self.to_cloudia_evidence_page = QPushButton(self.frame_25)
         self.to_cloudia_evidence_page.setObjectName(u"to_cloudia_evidence_page")
@@ -713,12 +697,6 @@ class Ui_MainWindow(object):
         self.horizontalSpacer_13 = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
         self.gridLayout_3.addItem(self.horizontalSpacer_13, 0, 1, 1, 1)
-
-        self.back_to_spreadsheet_page = QPushButton(self.frame_25)
-        self.back_to_spreadsheet_page.setObjectName(u"back_to_spreadsheet_page")
-        self.back_to_spreadsheet_page.setMinimumSize(QSize(160, 0))
-
-        self.gridLayout_3.addWidget(self.back_to_spreadsheet_page, 0, 0, 1, 1)
 
 
         self.verticalLayout_17.addWidget(self.frame_25)
@@ -956,9 +934,8 @@ class Ui_MainWindow(object):
         self.app_title_3.setText(QCoreApplication.translate("MainWindow", u"ACCOUNTING MANAGEMENT", None))
         self.page_title_3.setText(QCoreApplication.translate("MainWindow", u"KINTONE RECORDS", None))
         self.label_2.setText(QCoreApplication.translate("MainWindow", u"Spreadsheet Records >>> Kintone Reconciliation", None))
-        self.reconcile_spreadsheet_kintone_button.setText(QCoreApplication.translate("MainWindow", u"Reconcile", None))
-        self.to_cloudia_evidence_page.setText(QCoreApplication.translate("MainWindow", u">>> Cloudia Evidence", None))
         self.back_to_spreadsheet_page.setText(QCoreApplication.translate("MainWindow", u"<<< Spreadsheet Records", None))
+        self.to_cloudia_evidence_page.setText(QCoreApplication.translate("MainWindow", u">>> Cloudia Evidence", None))
         self.app_title_5.setText(QCoreApplication.translate("MainWindow", u"ACCOUNTING MANAGEMENT", None))
         self.page_title_5.setText(QCoreApplication.translate("MainWindow", u"CLOUDIA EVIDENCE", None))
         self.label_11.setText(QCoreApplication.translate("MainWindow", u"Generate Cloudia evidence folder based on Kintone records", None))
